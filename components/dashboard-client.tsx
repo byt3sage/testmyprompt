@@ -11,6 +11,7 @@ import {
   Zap,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
+import posthog from "posthog-js";
 import { useMemo, useState } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -273,6 +274,11 @@ function escapeHtml(value: string): string {
 
 function exportReportPdf(test: PromptTest) {
   if (typeof window === "undefined") return;
+
+  posthog.capture("scan_report_exported", {
+    finding_count: test.findings.length,
+    score: test.score,
+  });
 
   const reportTitle = `Prompt Safety Report - ${new Date(test.createdAt).toLocaleString()}`;
   const level = getRiskLevel(test.score, test.findings);
@@ -838,12 +844,22 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     setPrompt(""); setLatestTest(data.test);
     setTests((prev) => [data.test, ...prev]);
     setUsage(data.usage ?? null);
+    posthog.capture("prompt_scan_completed", {
+      finding_count: data.test.findings.length,
+      score: data.test.score,
+      workspace_id: workspaceId,
+    });
   }
 
   async function createWorkspace(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setError(null);
     const res = await fetch("/api/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName, slug: workspaceSlug }) });
     if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed"); return; }
+    const data = await res.json();
+    posthog.capture("workspace_created", {
+      workspace_id: data.workspace.id,
+      plan: data.workspace.plan,
+    });
     window.location.reload();
   }
 
@@ -854,6 +870,10 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     const data = await res.json();
     if (!res.ok) { setError(data.error ?? "Failed to add member"); return; }
     setMemberEmail(""); setMemberSuccess(true);
+    posthog.capture("workspace_member_added", {
+      workspace_id: workspaceId,
+      role: "MEMBER",
+    });
   }
 
   async function loadTokens(wsId: string) {
@@ -887,6 +907,10 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     const res  = await fetch("/api/billing/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, plan }) });
     const data = await res.json();
     if (!res.ok || !data.url) { setError(data.error ?? "Unable to start checkout"); return; }
+    posthog.capture("checkout_started", {
+      plan,
+      workspace_id: workspaceId,
+    });
     window.location.href = data.url;
   }
 
@@ -895,6 +919,9 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     const res  = await fetch("/api/billing/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId }) });
     const data = await res.json();
     if (!res.ok || !data.url) { setError(data.error ?? "Unable to open portal"); return; }
+    posthog.capture("billing_portal_opened", {
+      workspace_id: workspaceId,
+    });
     window.location.href = data.url;
   }
 
@@ -993,7 +1020,11 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
           <button
             type="button"
             title="Sign out"
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={() => {
+              posthog.capture("user_signed_out");
+              posthog.reset();
+              void signOut({ callbackUrl: "/" });
+            }}
             className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200"
           >
             <LogOut size={13} />

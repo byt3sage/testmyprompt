@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
+import posthog from "posthog-js";
 
 export function SiteHeader() {
   const { status } = useSession();
@@ -32,7 +33,11 @@ export function SiteHeader() {
                 </Link>
                 <button
                   type="button"
-                  onClick={() => signOut({ callbackUrl: "/" })}
+                  onClick={() => {
+                    posthog.capture("user_signed_out");
+                    posthog.reset();
+                    void signOut({ callbackUrl: "/" });
+                  }}
                   className="rounded-full border border-stone-200 px-4 py-1.5 text-sm font-semibold text-stone-700 hover:border-stone-300 transition-colors"
                 >
                   Sign out
