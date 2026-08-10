@@ -95,6 +95,34 @@ const LEVEL_CFG: Record<RiskLevel, { ring: string; bg: string; text: string; lab
   critical: { ring: "ring-red-500/40",     bg: "bg-red-500/10",     text: "text-red-400",     label: "Critical" },
 };
 
+function pad2(value: number): string {
+  return value.toString().padStart(2, "0");
+}
+
+function formatUtcDateTime(value: string | Date): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getUTCFullYear();
+  const month = pad2(date.getUTCMonth() + 1);
+  const day = pad2(date.getUTCDate());
+  const hour = pad2(date.getUTCHours());
+  const minute = pad2(date.getUTCMinutes());
+
+  return `${year}-${month}-${day} ${hour}:${minute} UTC`;
+}
+
+function formatUtcDate(value: string | Date): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getUTCFullYear();
+  const month = pad2(date.getUTCMonth() + 1);
+  const day = pad2(date.getUTCDate());
+
+  return `${year}-${month}-${day}`;
+}
+
 // ─── Reusable UI atoms ────────────────────────────────────────────────────────
 
 function ScoreRing({ score, findings }: { score: number; findings: Finding[] }) {
@@ -234,6 +262,428 @@ function CategoriesGrid({ categories }: { categories: CategoryResult[] }) {
   );
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function exportReportPdf(test: PromptTest) {
+  if (typeof window === "undefined") return;
+
+  const reportTitle = `Prompt Safety Report - ${new Date(test.createdAt).toLocaleString()}`;
+  const level = getRiskLevel(test.score, test.findings);
+  const levelLabel = LEVEL_CFG[level].label;
+  const severityCounts = {
+    high: test.findings.filter((f) => f.severity === "high").length,
+    medium: test.findings.filter((f) => f.severity === "medium").length,
+    low: test.findings.filter((f) => f.severity === "low").length,
+  };
+
+  const levelChipClass: Record<RiskLevel, string> = {
+    safe: "chip-safe",
+    "low-risk": "chip-low",
+    moderate: "chip-moderate",
+    critical: "chip-critical",
+  };
+
+  const domainLabel: Record<CategoryResult["domain"], string> = {
+    security: "Security",
+    "safety-ethics": "Safety & Ethics",
+    quality: "Quality",
+  };
+
+  const severityClass = (severity: string) => {
+    if (severity === "high") return "sev-high";
+    if (severity === "medium") return "sev-medium";
+    return "sev-low";
+  };
+
+  const findings = test.findings.length
+    ? test.findings
+        .map(
+          (f) => `
+            <article class="finding-card">
+              <div class="finding-top">
+                <h4>${escapeHtml(f.category)}</h4>
+                <span class="severity-pill ${severityClass(f.severity)}">${escapeHtml(f.severity.toUpperCase())}</span>
+              </div>
+              <p class="finding-text">${escapeHtml(f.explanation)}</p>
+              <p class="fix-text"><strong>Fix:</strong> ${escapeHtml(f.recommendation)}</p>
+            </article>
+          `
+        )
+        .join("")
+    : `
+      <div class="empty-state">
+        <p>No vulnerabilities detected. This prompt looks healthy across the tested categories.</p>
+      </div>
+    `;
+
+  const categories = test.categoriesChecked?.length
+    ? test.categoriesChecked
+        .map(
+          (c) => `
+            <li class="category-item ${c.passed ? "pass" : "fail"}">
+              <span class="mark">${c.passed ? "✓" : "✗"}</span>
+              <span class="category-name">${escapeHtml(c.category)}</span>
+              <span class="domain-tag">${escapeHtml(domainLabel[c.domain])}</span>
+            </li>
+          `
+        )
+        .join("")
+    : "";
+
+  const improvedPrompt = test.improvedPrompt
+    ? `
+      <section class="section">
+        <div class="section-head">
+          <h3>Suggested rewrite</h3>
+          <span class="hint">Ready to copy</span>
+        </div>
+        <pre>${escapeHtml(test.improvedPrompt)}</pre>
+      </section>
+    `
+    : "";
+
+  const popup = window.open("about:blank", "_blank", "width=980,height=760");
+  if (!popup) return;
+
+  popup.document.open();
+  popup.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(reportTitle)}</title>
+        <style>
+          :root {
+            --ink: #0f172a;
+            --muted: #475569;
+            --line: #e2e8f0;
+            --paper: #ffffff;
+            --canvas: #f8fafc;
+            --safe: #059669;
+            --low: #0284c7;
+            --moderate: #d97706;
+            --critical: #dc2626;
+          }
+          * { box-sizing: border-box; }
+          @page { size: A4; margin: 14mm; }
+          body {
+            margin: 0;
+            font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+            color: var(--ink);
+            background: linear-gradient(180deg, #fff 0%, var(--canvas) 100%);
+            line-height: 1.45;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .wrap { padding: 22px; }
+          .hero {
+            border: 1px solid var(--line);
+            background: var(--paper);
+            border-radius: 16px;
+            padding: 16px 18px;
+          }
+          .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .shield {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: #fbbf24;
+            color: #1c1917;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          }
+          .brand-name {
+            font-size: 13px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #64748b;
+            font-weight: 700;
+          }
+          .title-row {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          h1 {
+            margin: 0;
+            font-size: 25px;
+            letter-spacing: -0.02em;
+            line-height: 1.15;
+          }
+          .risk-chip {
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border: 1px solid;
+          }
+          .chip-safe { color: var(--safe); border-color: #86efac; background: #f0fdf4; }
+          .chip-low { color: var(--low); border-color: #93c5fd; background: #eff6ff; }
+          .chip-moderate { color: var(--moderate); border-color: #fcd34d; background: #fffbeb; }
+          .chip-critical { color: var(--critical); border-color: #fca5a5; background: #fef2f2; }
+          .meta {
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--muted);
+          }
+          .kpis {
+            margin-top: 14px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .kpi {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            padding: 10px;
+          }
+          .kpi .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+            font-weight: 700;
+          }
+          .kpi .value {
+            margin-top: 4px;
+            font-size: 26px;
+            line-height: 1;
+            font-weight: 800;
+          }
+          .kpi .sub {
+            margin-top: 3px;
+            font-size: 11px;
+            color: var(--muted);
+          }
+          .section {
+            margin-top: 14px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: #fff;
+            padding: 14px;
+          }
+          .section-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+          }
+          .section h3 {
+            margin: 0;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #334155;
+          }
+          .hint {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+          }
+          .summary {
+            margin: 0;
+            font-size: 14px;
+            color: #0f172a;
+          }
+          .categories {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .category-item {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #fff;
+          }
+          .category-item.pass {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+          }
+          .category-item.fail {
+            background: #fef2f2;
+            border-color: #fecaca;
+          }
+          .mark { font-weight: 800; }
+          .category-name {
+            flex: 1;
+            font-size: 12px;
+            color: #0f172a;
+            font-weight: 600;
+          }
+          .domain-tag {
+            font-size: 10px;
+            color: #64748b;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 2px 6px;
+            background: #f8fafc;
+          }
+          .findings { display: grid; gap: 10px; }
+          .finding-card {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px 12px;
+            background: #fff;
+          }
+          .finding-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          .finding-top h4 {
+            margin: 0;
+            font-size: 14px;
+          }
+          .severity-pill {
+            border-radius: 999px;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 800;
+            border: 1px solid;
+            padding: 3px 7px;
+          }
+          .sev-high { color: var(--critical); border-color: #fca5a5; background: #fef2f2; }
+          .sev-medium { color: var(--moderate); border-color: #fcd34d; background: #fffbeb; }
+          .sev-low { color: var(--low); border-color: #93c5fd; background: #eff6ff; }
+          .finding-text, .fix-text {
+            margin: 7px 0 0;
+            font-size: 12px;
+            color: #334155;
+          }
+          .fix-text strong { color: #0f172a; }
+          .empty-state {
+            border: 1px dashed #86efac;
+            border-radius: 10px;
+            padding: 10px;
+            background: #f0fdf4;
+            color: #166534;
+            font-size: 13px;
+          }
+          pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 10px;
+            font: 12px/1.45 "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+          }
+          .footer {
+            margin-top: 10px;
+            text-align: right;
+            font-size: 11px;
+            color: #94a3b8;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="wrap">
+          <section class="hero">
+            <div class="brand-row">
+              <span class="shield" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 1L2 4v4c0 3.3 2.5 6.4 6 7 3.5-.6 6-3.7 6-7V4L8 1z" fill="currentColor" fill-opacity=".25" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                  <path d="M5.5 8.5l1.8 1.8 3.2-3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="brand-name">TestMyPrompt</span>
+            </div>
+            <div class="title-row">
+              <h1>Prompt Safety Report</h1>
+              <span class="risk-chip ${levelChipClass[level]}">${escapeHtml(levelLabel)}</span>
+            </div>
+            <p class="meta">Scan time: ${escapeHtml(new Date(test.createdAt).toLocaleString())}</p>
+            <div class="kpis">
+              <div class="kpi">
+                <div class="label">Risk score</div>
+                <div class="value">${test.score}</div>
+                <div class="sub">Out of 100</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Findings</div>
+                <div class="value">${test.findings.length}</div>
+                <div class="sub">Total issues</div>
+              </div>
+              <div class="kpi">
+                <div class="label">High severity</div>
+                <div class="value">${severityCounts.high}</div>
+                <div class="sub">Critical focus</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Categories</div>
+                <div class="value">${test.categoriesChecked?.length ?? 0}</div>
+                <div class="sub">Checks executed</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h3>Executive summary</h3>
+            </div>
+            <p class="summary">${escapeHtml(test.summary)}</p>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h3>Categories checked</h3>
+              <span class="hint">Pass or issue</span>
+            </div>
+            <ul class="categories">${categories || "<li class='category-item'><span class='category-name'>No category details available.</span></li>"}</ul>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h3>Findings</h3>
+              <span class="hint">Actionable remediation included</span>
+            </div>
+            <div class="findings">${findings}</div>
+          </section>
+
+          ${improvedPrompt}
+
+          <p class="footer">Generated ${escapeHtml(new Date().toLocaleString())}</p>
+        </main>
+      </body>
+    </html>
+  `);
+
+  popup.document.close();
+  popup.focus();
+  popup.onload = () => {
+    popup.print();
+  };
+}
+
 function TestResult({ test }: { test: PromptTest }) {
   return (
     <div className="space-y-3">
@@ -242,8 +692,15 @@ function TestResult({ test }: { test: PromptTest }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-relaxed text-zinc-300">{test.summary}</p>
           <p className="mt-1 text-xs text-zinc-600">
-            {new Date(test.createdAt).toLocaleString()}
+            {formatUtcDateTime(test.createdAt)}
           </p>
+          <button
+            type="button"
+            onClick={() => exportReportPdf(test)}
+            className="mt-2 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+          >
+            Export PDF
+          </button>
         </div>
       </div>
       {test.findings.length > 0 ? (
@@ -290,7 +747,7 @@ function HistoryRow({ test }: { test: PromptTest }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-zinc-300">{test.summary}</p>
           <p className="text-xs text-zinc-600">
-            {new Date(test.createdAt).toLocaleString()}
+            {formatUtcDateTime(test.createdAt)}
           </p>
         </div>
         <span className="shrink-0 text-xs text-zinc-600">{test.findings.length} finding{test.findings.length !== 1 ? "s" : ""}</span>
@@ -298,6 +755,15 @@ function HistoryRow({ test }: { test: PromptTest }) {
       </button>
       {open && (
         <div className="border-t border-zinc-800 p-4 space-y-4">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => exportReportPdf(test)}
+              className="rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+            >
+              Export PDF
+            </button>
+          </div>
           {test.findings.length === 0
             ? <p className="text-xs text-emerald-400">No vulnerabilities detected</p>
             : <div className="space-y-2">
@@ -448,7 +914,10 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
         {/* Logo */}
         <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-4">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400">
-            <ShieldAlert size={14} className="text-zinc-900" />
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path d="M8 1L2 4v4c0 3.3 2.5 6.4 6 7 3.5-.6 6-3.7 6-7V4L8 1z" fill="currentColor" fillOpacity=".25" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+              <path d="M5.5 8.5l1.8 1.8 3.2-3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
           <span className="text-sm font-black tracking-tight text-white">TestMyPrompt</span>
         </div>
@@ -716,10 +1185,10 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
                             <code className="text-zinc-500">{t.prefix}…</code>
                             {" · "}
                             {t.lastUsedAt
-                              ? `Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`
+                              ? `Last used ${formatUtcDate(t.lastUsedAt)}`
                               : "Never used"}
                             {" · "}
-                            Created {new Date(t.createdAt).toLocaleDateString()}
+                            Created {formatUtcDate(t.createdAt)}
                             {t.user.name ? ` by ${t.user.name}` : ""}
                           </p>
                         </div>
