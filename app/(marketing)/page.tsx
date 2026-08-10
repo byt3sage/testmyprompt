@@ -279,7 +279,7 @@ export default function Home() {
                   <span className="text-amber-400">curl</span> -X POST \
                 </p>
                 <p className="pl-4 text-stone-300">
-                  https://api.testmyprompt.dev/v1/test \
+                  https://api.testmyprompt.net/v1/test \
                 </p>
                 <p className="pl-4 text-stone-300">
                   -H <span className="text-emerald-400">&quot;Authorization: Bearer $TMP_KEY&quot;</span> \

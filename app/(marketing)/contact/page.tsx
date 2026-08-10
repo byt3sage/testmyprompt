@@ -6,7 +6,7 @@ export default function ContactPage() {
         Need help onboarding your team or integrating custom model checks?
       </p>
       <div className="mt-8 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-        <p className="text-stone-700">Email: founders@testmyprompt.dev</p>
+        <p className="text-stone-700">Email: jae@testmyprompt.net</p>
         <p className="mt-2 text-stone-700">Support window: Mon-Fri, 9am-6pm PT</p>
       </div>
     </main>

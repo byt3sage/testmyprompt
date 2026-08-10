@@ -4,7 +4,7 @@ import { PlanTier, WorkspaceRole } from "@prisma/client";
 import { db } from "../lib/db";
 
 async function main() {
-  const email = "demo@testmyprompt.dev";
+  const email = "demo@testmyprompt.net";
   const passwordHash = await bcrypt.hash("Password123!", 10);
 
   const user = await db.user.upsert({
