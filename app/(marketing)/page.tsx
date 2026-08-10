@@ -96,7 +96,7 @@ export default function Home() {
                 <span className="h-3 w-3 rounded-full bg-red-500/70" />
                 <span className="h-3 w-3 rounded-full bg-amber-500/70" />
                 <span className="h-3 w-3 rounded-full bg-emerald-500/70" />
-                <span className="ml-2 text-xs text-stone-500">prompt-test · gpt-4o</span>
+                <span className="ml-2 text-xs text-stone-500">prompt-test</span>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -285,7 +285,7 @@ export default function Home() {
                   -H <span className="text-emerald-400">&quot;Authorization: Bearer $TMP_KEY&quot;</span> \
                 </p>
                 <p className="pl-4 text-stone-300">
-                  -d <span className="text-emerald-400">&apos;&#123;&quot;prompt&quot;: &quot;...&quot;, &quot;model&quot;: &quot;gpt-4o&quot;&#125;&apos;</span>
+                  -d <span className="text-emerald-400">&apos;&#123;&quot;prompt&quot;: &quot;...&quot;&#125;&apos;</span>
                 </p>
                 <div className="mt-5 rounded-lg border border-stone-800 bg-stone-950 p-3">
                   <p className="text-stone-500">{"// Response"}</p>
@@ -342,8 +342,8 @@ export default function Home() {
               <div
                 key={tier.name}
                 className={`rounded-2xl border p-6 ${tier.highlight
-                    ? "border-amber-300 bg-amber-50 shadow-md shadow-amber-100"
-                    : "border-stone-200 bg-white"
+                  ? "border-amber-300 bg-amber-50 shadow-md shadow-amber-100"
+                  : "border-stone-200 bg-white"
                   }`}
               >
                 {tier.highlight && (
@@ -366,8 +366,8 @@ export default function Home() {
                 <Link
                   href={tier.href}
                   className={`mt-6 block rounded-full py-2.5 text-center text-sm font-semibold transition-colors ${tier.highlight
-                      ? "bg-stone-900 text-white hover:bg-stone-800"
-                      : "border border-stone-200 text-stone-700 hover:border-stone-300"
+                    ? "bg-stone-900 text-white hover:bg-stone-800"
+                    : "border border-stone-200 text-stone-700 hover:border-stone-300"
                     }`}
                 >
                   {tier.cta}
