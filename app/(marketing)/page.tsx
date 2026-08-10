@@ -47,7 +47,7 @@ const FEATURES = [
 
 const HOW_IT_WORKS = [
   { step: "01", title: "Paste your prompt", body: "Drop in any system prompt — from a customer-facing chatbot to an internal agent." },
-  { step: "02", title: "AI analyses the risk", body: "GPT-4o scans for known attack vectors across 22 categories in real time." },
+  { step: "02", title: "AI analyses the risk", body: "Our model scans for known attack vectors across 22 categories in real time." },
   { step: "03", title: "Score, fix, ship", body: "Get a clear 0–100 score, severity-graded findings, and remediation guidance." },
 ];
 
@@ -113,7 +113,7 @@ export default function Home() {
               <div className="mt-4 space-y-2">
                 {[
                   { cat: "Prompt Injection", sev: "medium", color: "text-amber-400 border-amber-400/20 bg-amber-400/10" },
-                  { cat: "Policy Bypass",    sev: "medium", color: "text-amber-400 border-amber-400/20 bg-amber-400/10" },
+                  { cat: "Policy Bypass", sev: "medium", color: "text-amber-400 border-amber-400/20 bg-amber-400/10" },
                 ].map((f) => (
                   <div key={f.cat} className="flex items-center justify-between rounded-lg bg-stone-900 px-3 py-2">
                     <span className="text-xs text-stone-300">{f.cat}</span>
@@ -281,9 +281,9 @@ export default function Home() {
                 <p className="pl-4 text-stone-300">
                   https://api.testmyprompt.dev/v1/test \
                 </p>
-                  <p className="pl-4 text-stone-300">
-                    -H <span className="text-emerald-400">&quot;Authorization: Bearer $TMP_KEY&quot;</span> \
-                  </p>
+                <p className="pl-4 text-stone-300">
+                  -H <span className="text-emerald-400">&quot;Authorization: Bearer $TMP_KEY&quot;</span> \
+                </p>
                 <p className="pl-4 text-stone-300">
                   -d <span className="text-emerald-400">&apos;&#123;&quot;prompt&quot;: &quot;...&quot;, &quot;model&quot;: &quot;gpt-4o&quot;&#125;&apos;</span>
                 </p>
@@ -341,11 +341,10 @@ export default function Home() {
             ].map((tier) => (
               <div
                 key={tier.name}
-                className={`rounded-2xl border p-6 ${
-                  tier.highlight
+                className={`rounded-2xl border p-6 ${tier.highlight
                     ? "border-amber-300 bg-amber-50 shadow-md shadow-amber-100"
                     : "border-stone-200 bg-white"
-                }`}
+                  }`}
               >
                 {tier.highlight && (
                   <span className="mb-3 inline-block rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-900">
@@ -366,11 +365,10 @@ export default function Home() {
                 </ul>
                 <Link
                   href={tier.href}
-                  className={`mt-6 block rounded-full py-2.5 text-center text-sm font-semibold transition-colors ${
-                    tier.highlight
+                  className={`mt-6 block rounded-full py-2.5 text-center text-sm font-semibold transition-colors ${tier.highlight
                       ? "bg-stone-900 text-white hover:bg-stone-800"
                       : "border border-stone-200 text-stone-700 hover:border-stone-300"
-                  }`}
+                    }`}
                 >
                   {tier.cta}
                 </Link>
@@ -405,9 +403,9 @@ export default function Home() {
           <span className="font-black tracking-tight text-stone-900">TestMyPrompt</span>
           <nav className="flex gap-5">
             <Link href="/features" className="hover:text-stone-700 transition-colors">Features</Link>
-            <Link href="/pricing"  className="hover:text-stone-700 transition-colors">Pricing</Link>
-            <Link href="/docs"     className="hover:text-stone-700 transition-colors">Docs</Link>
-            <Link href="/contact"  className="hover:text-stone-700 transition-colors">Contact</Link>
+            <Link href="/pricing" className="hover:text-stone-700 transition-colors">Pricing</Link>
+            <Link href="/docs" className="hover:text-stone-700 transition-colors">Docs</Link>
+            <Link href="/contact" className="hover:text-stone-700 transition-colors">Contact</Link>
           </nav>
           <p>© {new Date().getFullYear()} TestMyPrompt</p>
         </div>

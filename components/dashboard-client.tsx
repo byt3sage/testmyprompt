@@ -243,7 +243,6 @@ function TestResult({ test }: { test: PromptTest }) {
           <p className="text-sm leading-relaxed text-zinc-300">{test.summary}</p>
           <p className="mt-1 text-xs text-zinc-600">
             {new Date(test.createdAt).toLocaleString()}
-            {test.targetModel ? ` · ${test.targetModel}` : ""}
           </p>
         </div>
       </div>
@@ -292,7 +291,6 @@ function HistoryRow({ test }: { test: PromptTest }) {
           <p className="truncate text-sm text-zinc-300">{test.summary}</p>
           <p className="text-xs text-zinc-600">
             {new Date(test.createdAt).toLocaleString()}
-            {test.targetModel ? ` · ${test.targetModel}` : ""}
           </p>
         </div>
         <span className="shrink-0 text-xs text-zinc-600">{test.findings.length} finding{test.findings.length !== 1 ? "s" : ""}</span>
@@ -334,7 +332,6 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
   const { data: session } = useSession();
   const [activeTab, setActiveTab]       = useState<Tab>("scanner");
   const [workspaceId, setWorkspaceId]   = useState(initialWorkspaceId ?? "");
-  const [targetModel, setTargetModel]   = useState("gpt-4o");
   const [prompt, setPrompt]             = useState("");
   const [tests, setTests]               = useState<PromptTest[]>(initialTests);
   const [usage, setUsage]               = useState<Usage | null>(initialUsage);
@@ -367,7 +364,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     e.preventDefault();
     if (!workspaceId) { setError("Select a workspace first"); return; }
     setLoading(true); setError(null);
-    const res  = await fetch("/api/tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, targetModel, prompt }) });
+    const res  = await fetch("/api/tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, prompt }) });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) { setError(data.error ?? "Failed to score prompt"); return; }
@@ -586,15 +583,6 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
                   <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">New scan</p>
                   <form onSubmit={runTest} className="space-y-3">
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-zinc-500">Target model</label>
-                      <input
-                        value={targetModel}
-                        onChange={(e) => setTargetModel(e.target.value)}
-                        placeholder="e.g. gpt-4o, claude-3-5-sonnet"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
-                      />
-                    </div>
-                    <div>
                       <label className="mb-1 block text-xs font-semibold text-zinc-500">Prompt to evaluate</label>
                       <textarea
                         value={prompt}
@@ -755,8 +743,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
   -H "Authorization: Bearer <YOUR_TOKEN>" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "prompt": "You are a helpful assistant...",
-    "model": "gpt-4o"
+    "prompt": "You are a helpful assistant..."
   }'`}</pre>
                 <p className="mt-3 text-xs text-zinc-500">
                   Returns a JSON object with <code className="text-zinc-400">score</code>, <code className="text-zinc-400">level</code>, <code className="text-zinc-400">findings</code>, and <code className="text-zinc-400">improvedPrompt</code>. Each call counts against your workspace&apos;s monthly limit.
