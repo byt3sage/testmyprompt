@@ -1,8 +1,18 @@
 import bcrypt from "bcryptjs";
+import { WorkspaceRole } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { registerSchema } from "@/lib/validators";
+
+function toSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 30);
+}
 
 export async function POST(request: Request) {
   try {
@@ -16,7 +26,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, email, password } = parsed.data;
+    const { name, workspaceName, email, password } = parsed.data;
     const normalizedEmail = email.toLowerCase();
 
     const existing = await db.user.findUnique({
@@ -30,19 +40,43 @@ export async function POST(request: Request) {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const user = await db.user.create({
-      data: {
-        name,
-        email: normalizedEmail,
-        passwordHash,
-      },
-      select: {
-        id: true,
-        email: true,
-      },
+    const result = await db.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name,
+          email: normalizedEmail,
+          passwordHash,
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      });
+
+      const baseSlug = toSlug(workspaceName) || "workspace";
+      const workspace = await tx.workspace.create({
+        data: {
+          name: workspaceName,
+          slug: `${baseSlug}-${user.id.slice(-6).toLowerCase()}`,
+          memberships: {
+            create: {
+              userId: user.id,
+              role: WorkspaceRole.OWNER,
+            },
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          plan: true,
+        },
+      });
+
+      return { user, workspace };
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: "Unable to register user", details: `${error}` },

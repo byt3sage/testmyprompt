@@ -66,6 +66,7 @@ export function SignInForm() {
 export function SignUpForm() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function SignUpForm() {
     const registerRes = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, workspaceName, email, password }),
     });
 
     if (!registerRes.ok) {
@@ -121,6 +122,14 @@ export function SignUpForm() {
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         placeholder="you@company.com"
+        className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3"
+      />
+      <input
+        type="text"
+        required
+        value={workspaceName}
+        onChange={(event) => setWorkspaceName(event.target.value)}
+        placeholder="Workspace name"
         className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3"
       />
       <input

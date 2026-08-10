@@ -347,6 +347,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
   const [newTokenName, setNewTokenName] = useState("");
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
+  const apiFeaturesEnabled = false;
 
   const activeWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
   const avgScore        = useMemo(() => tests.length ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null, [tests]);
@@ -480,7 +481,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
               type="button"
               onClick={() => {
                 setActiveTab(id);
-                if (id === "workspace" && workspaceId) void loadTokens(workspaceId);
+                if (apiFeaturesEnabled && id === "workspace" && workspaceId) void loadTokens(workspaceId);
               }}
               className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeTab === id
@@ -663,6 +664,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
               </div>
 
               {/* API tokens */}
+              {apiFeaturesEnabled && (
               <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
                 <div className="flex items-center justify-between">
                   <div>
@@ -735,8 +737,10 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
                   <p className="mt-4 text-xs text-zinc-600">No tokens yet. Generate one above.</p>
                 )}
               </div>
+              )}
 
               {/* API usage example */}
+              {apiFeaturesEnabled && (
               <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
                 <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">API usage</p>
                 <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`curl -X POST https://your-domain.com/api/v1/test \\
@@ -749,6 +753,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
                   Returns a JSON object with <code className="text-zinc-400">score</code>, <code className="text-zinc-400">level</code>, <code className="text-zinc-400">findings</code>, and <code className="text-zinc-400">improvedPrompt</code>. Each call counts against your workspace&apos;s monthly limit.
                 </p>
               </div>
+              )}
             </div>
           )}
 
