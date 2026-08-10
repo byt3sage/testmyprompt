@@ -1,0 +1,822 @@
+"use client";
+
+import {
+  Clock,
+  CreditCard,
+  LogOut,
+  Settings2,
+  ShieldAlert,
+  Terminal,
+  Users,
+  Zap,
+} from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import { useMemo, useState } from "react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Tab = "scanner" | "history" | "workspace" | "billing";
+
+type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+  plan: "FREE" | "PRO" | "BUSINESS";
+};
+
+type Finding = {
+  id: string;
+  category: string;
+  severity: string;
+  explanation: string;
+  recommendation: string;
+};
+
+type CategoryResult = {
+  category: string;
+  domain: "security" | "safety-ethics" | "quality";
+  passed: boolean;
+};
+
+type PromptTest = {
+  id: string;
+  score: number;
+  summary: string;
+  targetModel: string | null;
+  createdAt: string | Date;
+  improvedPrompt?: string | null;
+  findings: Finding[];
+  categoriesChecked?: CategoryResult[];
+};
+
+type Usage = {
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
+type ApiTokenRow = {
+  id: string;
+  name: string;
+  prefix: string;
+  lastUsedAt: string | Date | null;
+  createdAt: string | Date;
+  user: { name: string | null; email: string };
+};
+
+type Props = {
+  workspaces: Workspace[];
+  initialWorkspaceId: string | null;
+  initialTests: PromptTest[];
+  initialUsage: Usage | null;
+};
+
+// ─── Risk level helper ────────────────────────────────────────────────────────
+// Findings severity overrides the numeric score — a prompt with medium/high
+// findings can never be labelled "Safe" regardless of its score.
+
+type RiskLevel = "safe" | "low-risk" | "moderate" | "critical";
+
+function getRiskLevel(score: number, findings: Finding[]): RiskLevel {
+  const hasHigh   = findings.some((f) => f.severity === "high");
+  const hasMedium = findings.some((f) => f.severity === "medium");
+  const hasLow    = findings.some((f) => f.severity === "low");
+
+  if (hasHigh   || score < 40)  return "critical";
+  if (hasMedium || score < 65)  return "moderate";
+  if (hasLow    || score < 80)  return "low-risk";
+  return "safe";
+}
+
+const LEVEL_CFG: Record<RiskLevel, { ring: string; bg: string; text: string; label: string }> = {
+  safe:     { ring: "ring-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-400", label: "Safe"     },
+  "low-risk": { ring: "ring-sky-500/40",   bg: "bg-sky-500/10",    text: "text-sky-400",    label: "Low Risk" },
+  moderate: { ring: "ring-amber-500/40",   bg: "bg-amber-500/10",   text: "text-amber-400",   label: "At Risk"  },
+  critical: { ring: "ring-red-500/40",     bg: "bg-red-500/10",     text: "text-red-400",     label: "Critical" },
+};
+
+// ─── Reusable UI atoms ────────────────────────────────────────────────────────
+
+function ScoreRing({ score, findings }: { score: number; findings: Finding[] }) {
+  const level = getRiskLevel(score, findings);
+  const cfg   = LEVEL_CFG[level];
+
+  return (
+    <div className={`flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-full ring-2 ${cfg.ring} ${cfg.bg}`}>
+      <span className={`text-2xl font-black leading-none ${cfg.text}`}>{score}</span>
+      <span className={`mt-0.5 text-[9px] font-bold uppercase tracking-widest ${cfg.text}`}>{cfg.label}</span>
+    </div>
+  );
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const styles: Record<string, string> = {
+    high:   "bg-red-500/15   text-red-400   border-red-500/25",
+    medium: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+    low:    "bg-blue-500/15  text-blue-400  border-blue-500/25",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles[severity] ?? styles.low}`}>
+      {severity}
+    </span>
+  );
+}
+
+function PlanBadge({ plan }: { plan: Workspace["plan"] }) {
+  const styles: Record<Workspace["plan"], string> = {
+    FREE:     "bg-zinc-700/60    text-zinc-400   border-zinc-600/40",
+    PRO:      "bg-amber-500/15   text-amber-400  border-amber-500/25",
+    BUSINESS: "bg-violet-500/15  text-violet-400 border-violet-500/25",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles[plan]}`}>
+      {plan}
+    </span>
+  );
+}
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className={`mt-1 text-2xl font-black ${accent ?? "text-zinc-100"}`}>{value}</p>
+      {sub ? <p className="mt-0.5 text-xs text-zinc-600">{sub}</p> : null}
+    </div>
+  );
+}
+
+// ─── Result sub-components ────────────────────────────────────────────────────
+
+function FindingCard({ finding }: { finding: Finding }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold text-zinc-200">{finding.category}</span>
+        <SeverityBadge severity={finding.severity} />
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-zinc-400">{finding.explanation}</p>
+      <p className="mt-1 text-xs text-zinc-500">
+        <span className="font-semibold text-zinc-400">Fix: </span>
+        {finding.recommendation}
+      </p>
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="flex items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-[10px] font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+    >
+      {copied ? "✓ Copied" : "Copy"}
+    </button>
+  );
+}
+
+function CategoriesGrid({ categories }: { categories: CategoryResult[] }) {
+  const domainGroups: Record<string, CategoryResult[]> = {
+    security: [],
+    "safety-ethics": [],
+    quality: [],
+  };
+
+  for (const cat of categories) {
+    domainGroups[cat.domain].push(cat);
+  }
+
+  const domainLabels: Record<string, string> = {
+    security: "Security",
+    "safety-ethics": "Safety & Ethics",
+    quality: "Quality",
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Test Categories</h4>
+      {(Object.keys(domainGroups) as Array<keyof typeof domainGroups>).map((domain) => (
+        <div key={domain}>
+          <p className="mb-2 text-[10px] font-semibold text-zinc-500">{domainLabels[domain]}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {domainGroups[domain].map((cat) => (
+              <div
+                key={cat.category}
+                className={`flex items-center gap-2 rounded-lg border px-2 py-2 text-xs ${
+                  cat.passed
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-red-500/30 bg-red-500/5"
+                }`}
+              >
+                <span
+                  className={`shrink-0 font-bold ${
+                    cat.passed ? "text-emerald-400" : "text-red-400"
+                  }`}
+                >
+                  {cat.passed ? "✓" : "✗"}
+                </span>
+                <span className="text-zinc-300">{cat.category}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TestResult({ test }: { test: PromptTest }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-4">
+        <ScoreRing score={test.score} findings={test.findings} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm leading-relaxed text-zinc-300">{test.summary}</p>
+          <p className="mt-1 text-xs text-zinc-600">
+            {new Date(test.createdAt).toLocaleString()}
+            {test.targetModel ? ` · ${test.targetModel}` : ""}
+          </p>
+        </div>
+      </div>
+      {test.findings.length > 0 ? (
+        <div className="space-y-2">
+          {test.findings.map((f) => <FindingCard key={f.id} finding={f} />)}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-400">
+          <span>✓</span> No vulnerabilities detected
+        </div>
+      )}
+      {test.categoriesChecked && test.categoriesChecked.length > 0 ? (
+        <CategoriesGrid categories={test.categoriesChecked} />
+      ) : null}
+      {test.improvedPrompt ? (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+          <div className="flex items-center justify-between border-b border-emerald-500/15 px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-emerald-400">✦</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+                Suggested rewrite
+              </span>
+            </div>
+            <CopyButton text={test.improvedPrompt} />
+          </div>
+          <pre className="overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-xs leading-relaxed text-emerald-100/80">
+            {test.improvedPrompt}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryRow({ test }: { test: PromptTest }) {
+  const [open, setOpen] = useState(false);
+  const level = getRiskLevel(test.score, test.findings);
+  const color = LEVEL_CFG[level].text;
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-4 p-4 text-left">
+        <span className={`w-12 shrink-0 text-2xl font-black ${color}`}>{test.score}</span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-zinc-300">{test.summary}</p>
+          <p className="text-xs text-zinc-600">
+            {new Date(test.createdAt).toLocaleString()}
+            {test.targetModel ? ` · ${test.targetModel}` : ""}
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-zinc-600">{test.findings.length} finding{test.findings.length !== 1 ? "s" : ""}</span>
+        <span className="shrink-0 text-xs text-zinc-600">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-zinc-800 p-4 space-y-4">
+          {test.findings.length === 0
+            ? <p className="text-xs text-emerald-400">No vulnerabilities detected</p>
+            : <div className="space-y-2">
+                {test.findings.map((f) => <FindingCard key={f.id} finding={f} />)}
+              </div>}
+          {test.categoriesChecked && test.categoriesChecked.length > 0 ? (
+            <CategoriesGrid categories={test.categoriesChecked} />
+          ) : null}
+          {test.improvedPrompt ? (
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+              <div className="flex items-center justify-between border-b border-emerald-500/15 px-3 py-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-emerald-400">✦</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Suggested rewrite</span>
+                </div>
+                <CopyButton text={test.improvedPrompt} />
+              </div>
+              <pre className="overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-xs leading-relaxed text-emerald-100/80">
+                {test.improvedPrompt}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, initialUsage }: Props) {
+  const { data: session } = useSession();
+  const [activeTab, setActiveTab]       = useState<Tab>("scanner");
+  const [workspaceId, setWorkspaceId]   = useState(initialWorkspaceId ?? "");
+  const [targetModel, setTargetModel]   = useState("gpt-4o");
+  const [prompt, setPrompt]             = useState("");
+  const [tests, setTests]               = useState<PromptTest[]>(initialTests);
+  const [usage, setUsage]               = useState<Usage | null>(initialUsage);
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceSlug, setWorkspaceSlug] = useState("");
+  const [memberEmail, setMemberEmail]   = useState("");
+  const [memberSuccess, setMemberSuccess] = useState(false);
+  const [latestTest, setLatestTest]     = useState<PromptTest | null>(null);
+  // API token state
+  const [tokens, setTokens]             = useState<ApiTokenRow[]>([]);
+  const [newTokenName, setNewTokenName] = useState("");
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+
+  const activeWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
+  const avgScore        = useMemo(() => tests.length ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null, [tests]);
+  const highRiskCount   = useMemo(() => tests.filter((t) => t.score < 40).length, [tests]);
+
+  async function loadTests(id: string) {
+    const res = await fetch(`/api/tests?workspaceId=${id}`);
+    if (!res.ok) { setError("Unable to load test history"); return; }
+    const data = await res.json();
+    setTests(data.tests ?? []);
+    setUsage(data.usage ?? null);
+  }
+
+  async function runTest(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!workspaceId) { setError("Select a workspace first"); return; }
+    setLoading(true); setError(null);
+    const res  = await fetch("/api/tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, targetModel, prompt }) });
+    const data = await res.json();
+    setLoading(false);
+    if (!res.ok) { setError(data.error ?? "Failed to score prompt"); return; }
+    setPrompt(""); setLatestTest(data.test);
+    setTests((prev) => [data.test, ...prev]);
+    setUsage(data.usage ?? null);
+  }
+
+  async function createWorkspace(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setError(null);
+    const res = await fetch("/api/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName, slug: workspaceSlug }) });
+    if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed"); return; }
+    window.location.reload();
+  }
+
+  async function addMember(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setMemberSuccess(false);
+    if (!workspaceId) { setError("Select a workspace first"); return; }
+    const res  = await fetch(`/api/workspaces/${workspaceId}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: memberEmail, role: "MEMBER" }) });
+    const data = await res.json();
+    if (!res.ok) { setError(data.error ?? "Failed to add member"); return; }
+    setMemberEmail(""); setMemberSuccess(true);
+  }
+
+  async function loadTokens(wsId: string) {
+    const res = await fetch(`/api/tokens?workspaceId=${wsId}`);
+    if (!res.ok) { setError("Unable to load API tokens"); return; }
+    const data = await res.json();
+    setTokens(data.tokens ?? []);
+  }
+
+  async function createToken(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!workspaceId) { setError("Select a workspace first"); return; }
+    setTokenLoading(true);
+    const res  = await fetch("/api/tokens", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, name: newTokenName }) });
+    const data = await res.json();
+    setTokenLoading(false);
+    if (!res.ok) { setError(data.error ?? "Failed to create token"); return; }
+    setNewTokenName("");
+    setRevealedToken(data.rawToken);
+    setTokens((prev) => [data.token, ...prev]);
+  }
+
+  async function revokeToken(tokenId: string) {
+    const res = await fetch(`/api/tokens/${tokenId}`, { method: "DELETE" });
+    if (!res.ok) { setError("Failed to revoke token"); return; }
+    setTokens((prev) => prev.filter((t) => t.id !== tokenId));
+  }
+
+  async function startCheckout(plan: "PRO" | "BUSINESS") {
+    if (!workspaceId) { setError("Select a workspace first"); return; }
+    const res  = await fetch("/api/billing/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, plan }) });
+    const data = await res.json();
+    if (!res.ok || !data.url) { setError(data.error ?? "Unable to start checkout"); return; }
+    window.location.href = data.url;
+  }
+
+  async function openBillingPortal() {
+    if (!workspaceId) { setError("Select a workspace first"); return; }
+    const res  = await fetch("/api/billing/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId }) });
+    const data = await res.json();
+    if (!res.ok || !data.url) { setError(data.error ?? "Unable to open portal"); return; }
+    window.location.href = data.url;
+  }
+
+  const navItems: { id: Tab; label: string; icon: React.ElementType }[] = [
+    { id: "scanner",   label: "Scanner",   icon: Terminal    },
+    { id: "history",   label: "History",   icon: Clock       },
+    { id: "workspace", label: "Workspace", icon: Users       },
+    { id: "billing",   label: "Billing",   icon: CreditCard  },
+  ];
+
+  return (
+    <div className="flex h-full overflow-hidden">
+
+      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
+
+        {/* Logo */}
+        <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-4">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400">
+            <ShieldAlert size={14} className="text-zinc-900" />
+          </div>
+          <span className="text-sm font-black tracking-tight text-white">TestMyPrompt</span>
+        </div>
+
+        {/* Workspace picker */}
+        <div className="border-b border-zinc-800 px-3 py-3">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+            Workspace
+          </label>
+          <select
+            value={workspaceId}
+            onChange={(e) => { const id = e.target.value; setWorkspaceId(id); if (id) void loadTests(id); }}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-amber-400/50"
+          >
+            <option value="">Select workspace</option>
+            {workspaces.map((ws) => (
+              <option key={ws.id} value={ws.id}>{ws.name}</option>
+            ))}
+          </select>
+          {activeWorkspace ? (
+            <div className="mt-2"><PlanBadge plan={activeWorkspace.plan} /></div>
+          ) : null}
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 space-y-0.5 px-2 py-3">
+          {navItems.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setActiveTab(id);
+                if (id === "workspace" && workspaceId) void loadTokens(workspaceId);
+              }}
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === id
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+              }`}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Usage bar */}
+        {usage ? (
+          <div className="border-t border-zinc-800 px-4 py-3">
+            <div className="mb-1 flex items-center justify-between text-[10px] text-zinc-500">
+              <span className="font-semibold uppercase tracking-widest">Usage</span>
+              <span>{usage.used}/{usage.limit}</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-amber-400 transition-all"
+                style={{ width: `${Math.min(100, (usage.used / usage.limit) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {/* User row */}
+        <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-bold text-zinc-300">
+            {session?.user?.name?.charAt(0)?.toUpperCase() ?? "?"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-zinc-300">
+              {session?.user?.name ?? session?.user?.email ?? "—"}
+            </p>
+          </div>
+          <button
+            type="button"
+            title="Sign out"
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200"
+          >
+            <LogOut size={13} />
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main area ───────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 flex-col overflow-hidden bg-zinc-950">
+
+        {/* Top bar */}
+        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-6 py-3">
+          <div>
+            <h1 className="text-sm font-bold capitalize text-zinc-100">{activeTab}</h1>
+            <p className="text-xs text-zinc-500">
+              {activeTab === "scanner"   && "Paste a prompt and run a vulnerability scan"}
+              {activeTab === "history"   && "All test runs for this workspace"}
+              {activeTab === "workspace" && "Members and workspace settings"}
+              {activeTab === "billing"   && "Plan, usage limits and subscription"}
+            </p>
+          </div>
+          {activeTab === "scanner" && (
+            <div className="flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/5 px-3 py-1">
+              <Zap size={11} className="text-amber-400" />
+              <span className="text-xs font-semibold text-amber-400">AI-powered</span>
+            </div>
+          )}
+        </header>
+
+        {/* Error banner */}
+        {error ? (
+          <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-400">
+            <ShieldAlert size={14} className="shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} className="text-red-400/60 hover:text-red-300">✕</button>
+          </div>
+        ) : null}
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── Scanner ──────────────────────────────────────────────────── */}
+          {activeTab === "scanner" && (
+            <div className="space-y-5 p-6">
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="Tests this month"  value={usage ? `${usage.used}/${usage.limit}` : "—"} sub={usage ? `${usage.remaining} remaining` : undefined} />
+                <StatCard label="Avg score"         value={avgScore !== null ? avgScore : "—"} accent={avgScore === null ? undefined : avgScore >= 80 ? "text-emerald-400" : avgScore >= 65 ? "text-sky-400" : avgScore >= 40 ? "text-amber-400" : "text-red-400"} />
+                <StatCard label="High risk scans"   value={highRiskCount} sub="score below 40" accent={highRiskCount > 0 ? "text-red-400" : "text-zinc-100"} />
+                <StatCard label="Total scans"       value={tests.length} sub="in this workspace" />
+              </div>
+
+              {/* Two-column: form | result */}
+              <div className="grid gap-4 xl:grid-cols-2">
+                {/* Input form */}
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                  <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">New scan</p>
+                  <form onSubmit={runTest} className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-zinc-500">Target model</label>
+                      <input
+                        value={targetModel}
+                        onChange={(e) => setTargetModel(e.target.value)}
+                        placeholder="e.g. gpt-4o, claude-3-5-sonnet"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-zinc-500">Prompt to evaluate</label>
+                      <textarea
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="Paste the system prompt or instruction set you want to red-team…"
+                        className="min-h-44 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={loading || !workspaceId}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-zinc-900 transition-opacity disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <><Settings2 size={14} className="animate-spin" /> Analysing…</>
+                      ) : (
+                        <><Zap size={14} /> Run vulnerability scan</>
+                      )}
+                    </button>
+                    {!workspaceId && <p className="text-center text-xs text-zinc-500">Select a workspace to enable scanning</p>}
+                  </form>
+                </div>
+
+                {/* Latest result */}
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                  <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Latest result</p>
+                  {latestTest ?? tests[0] ? (
+                    <TestResult test={(latestTest ?? tests[0])!} />
+                  ) : (
+                    <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 text-zinc-600">
+                      <Terminal size={22} />
+                      <p className="text-sm">Run a scan to see results</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── History ──────────────────────────────────────────────────── */}
+          {activeTab === "history" && (
+            <div className="p-6">
+              <p className="mb-4 text-xs text-zinc-500">{tests.length} scans</p>
+              {tests.length === 0 ? (
+                <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-800 text-zinc-600">
+                  <Clock size={24} />
+                  <p className="text-sm">No scans yet in this workspace</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {tests.map((t) => <HistoryRow key={t.id} test={t} />)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Workspace ────────────────────────────────────────────────── */}
+          {activeTab === "workspace" && (
+            <div className="max-w-2xl space-y-5 p-6">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Create workspace</p>
+                <form onSubmit={createWorkspace} className="space-y-3">
+                  <input value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="Workspace name" className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40" required />
+                  <input value={workspaceSlug} onChange={(e) => setWorkspaceSlug(e.target.value)} placeholder="workspace-slug (lowercase, no spaces)" className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40" required />
+                  <button className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-600">Create workspace</button>
+                </form>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Add member</p>
+                <p className="mb-4 text-xs text-zinc-500">The user must already have a TestMyPrompt account.</p>
+                <form onSubmit={addMember} className="flex gap-2">
+                  <input type="email" value={memberEmail} onChange={(e) => setMemberEmail(e.target.value)} placeholder="colleague@company.com" className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40" required />
+                  <button className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-600">Add</button>
+                </form>
+                {memberSuccess && <p className="mt-2 text-xs font-semibold text-emerald-400">Member added successfully.</p>}
+              </div>
+
+              {/* API tokens */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">API tokens</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">Use tokens to call <code className="text-zinc-400">POST /api/v1/test</code> from your CI/CD pipeline.</p>
+                  </div>
+                </div>
+
+                {/* Reveal panel — shown once after creation */}
+                {revealedToken && (
+                  <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Save this now — it won&apos;t be shown again</p>
+                      <button type="button" onClick={() => setRevealedToken(null)} className="text-amber-400/60 hover:text-amber-300 text-xs">✕</button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="flex-1 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-xs text-amber-200">{revealedToken}</code>
+                      <CopyButton text={revealedToken} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Create form */}
+                <form onSubmit={createToken} className="mt-4 flex gap-2">
+                  <input
+                    value={newTokenName}
+                    onChange={(e) => setNewTokenName(e.target.value)}
+                    placeholder='Token name e.g. "CI pipeline"'
+                    className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={tokenLoading || !workspaceId}
+                    className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-900 transition-opacity disabled:opacity-50"
+                  >
+                    {tokenLoading ? "…" : "Generate"}
+                  </button>
+                </form>
+
+                {/* Token list */}
+                {tokens.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {tokens.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-zinc-300">{t.name}</p>
+                          <p className="mt-0.5 text-[10px] text-zinc-600">
+                            <code className="text-zinc-500">{t.prefix}…</code>
+                            {" · "}
+                            {t.lastUsedAt
+                              ? `Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`
+                              : "Never used"}
+                            {" · "}
+                            Created {new Date(t.createdAt).toLocaleDateString()}
+                            {t.user.name ? ` by ${t.user.name}` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => revokeToken(t.id)}
+                          className="ml-4 shrink-0 rounded-md border border-zinc-700 px-2 py-1 text-[10px] font-semibold text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-xs text-zinc-600">No tokens yet. Generate one above.</p>
+                )}
+              </div>
+
+              {/* API usage example */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">API usage</p>
+                <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`curl -X POST https://your-domain.com/api/v1/test \\
+  -H "Authorization: Bearer <YOUR_TOKEN>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "prompt": "You are a helpful assistant...",
+    "model": "gpt-4o"
+  }'`}</pre>
+                <p className="mt-3 text-xs text-zinc-500">
+                  Returns a JSON object with <code className="text-zinc-400">score</code>, <code className="text-zinc-400">level</code>, <code className="text-zinc-400">findings</code>, and <code className="text-zinc-400">improvedPrompt</code>. Each call counts against your workspace&apos;s monthly limit.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Billing ──────────────────────────────────────────────────── */}
+          {activeTab === "billing" && (
+            <div className="max-w-3xl space-y-5 p-6">
+              {activeWorkspace && (
+                <div className="flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Current plan</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-xl font-black text-zinc-100">{activeWorkspace.plan}</span>
+                      <PlanBadge plan={activeWorkspace.plan} />
+                    </div>
+                  </div>
+                  {usage && (
+                    <div className="ml-auto text-right">
+                      <p className="text-xs text-zinc-500">{usage.used} / {usage.limit} tests used this month</p>
+                      <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-zinc-800">
+                        <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(100, (usage.used / usage.limit) * 100)}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {([ { plan: "PRO", price: "$29/mo", features: ["20 tests / month", "10 seats", "AI-powered scoring", "Priority support"] }, { plan: "BUSINESS", price: "$99/mo from", features: ["200 tests / month included", "25 seats included", "AI-powered scoring", "Custom tests & seats"] } ] as const).map(({ plan, price, features }) => (
+                  <div key={plan} className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                    <div className="flex items-center justify-between">
+                      <PlanBadge plan={plan} />
+                      <span className="text-lg font-black text-zinc-100">{price}</span>
+                    </div>
+                    <ul className="mt-3 space-y-1.5">
+                      {features.map((f) => (
+                        <li key={f} className="flex items-center gap-1.5 text-xs text-zinc-400">
+                          <span className="text-amber-400">✓</span> {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" onClick={() => startCheckout(plan)} className="mt-4 w-full rounded-lg bg-amber-400 py-2 text-sm font-bold text-zinc-900 transition-opacity hover:opacity-90">
+                      Upgrade to {plan}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button type="button" onClick={openBillingPortal} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition-colors hover:bg-zinc-800">
+                Manage subscription →
+              </button>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
