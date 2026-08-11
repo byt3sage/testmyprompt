@@ -106,6 +106,25 @@ export async function POST(request: Request) {
 
     const profile = getScoringProfileForPlan(workspace.plan);
 
+    const existing = await db.promptTest.findFirst({
+      where: {
+        workspaceId: parsed.data.workspaceId,
+        userId: user.id,
+        prompt: parsed.data.prompt,
+        targetModel: parsed.data.targetModel ?? null,
+      },
+      include: { findings: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      const usage = await getWorkspaceUsage(parsed.data.workspaceId);
+      return NextResponse.json({
+        test: { ...existing, categoriesChecked: buildCategoriesChecked(existing.findings, profile), cached: true },
+        usage,
+      });
+    }
+
     const limitCheck = await ensureWithinPlanLimit(parsed.data.workspaceId);
     if (!limitCheck.allowed) {
       return NextResponse.json(
