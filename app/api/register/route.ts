@@ -38,12 +38,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, workspaceName, email, password } = parsed.data;
+    const { name, workspaceName, email, password, turnstileToken } = parsed.data;
     const normalizedEmail = email.toLowerCase();
 
     if (TURNSTILE_SECRET) {
-      const token = (parsed.data as { turnstileToken?: string }).turnstileToken;
-      if (!token || !(await verifyTurnstile(token))) {
+      if (!turnstileToken || !(await verifyTurnstile(turnstileToken))) {
         return NextResponse.json({ error: "Security check failed" }, { status: 403 });
       }
     }

@@ -6,6 +6,7 @@ export const registerSchema = z.object({
   workspaceName: z.string().min(2).max(80),
   email: z.string().email(),
   password: z.string().min(8).max(120),
+  turnstileToken: z.string().optional(),
 });
 
 export const workspaceSchema = z.object({
