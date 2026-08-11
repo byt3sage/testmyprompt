@@ -819,9 +819,9 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
   const [newTokenName, setNewTokenName] = useState("");
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
-  const apiFeaturesEnabled = activeWorkspace?.plan === "PRO" || activeWorkspace?.plan === "BUSINESS";
 
   const activeWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
+  const apiFeaturesEnabled = activeWorkspace?.plan === "PRO" || activeWorkspace?.plan === "BUSINESS";
   const avgScore        = useMemo(() => tests.length ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null, [tests]);
   const highRiskCount   = useMemo(() => tests.filter((t) => t.score < 40).length, [tests]);
 
