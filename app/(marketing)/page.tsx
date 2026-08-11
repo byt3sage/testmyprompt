@@ -40,8 +40,8 @@ const FEATURES = [
   },
   {
     icon: "🔌",
-    title: "API access (coming soon)",
-    body: "Integrate directly into your CI/CD pipeline. Fail deployments when a prompt exceeds your risk threshold.",
+    title: "API access",
+    body: "Integrate directly into your CI/CD pipeline. Fail deployments when a prompt exceeds your risk threshold. Available on Pro and Business plans.",
   },
 ];
 
@@ -234,7 +234,7 @@ export default function Home() {
           <div className="grid items-center gap-12 md:grid-cols-2">
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-400">
-                Coming soon
+                Available now
               </span>
               <h2 className="mt-4 text-2xl font-black md:text-3xl">
                 Shift prompt security left.<br />
@@ -258,10 +258,10 @@ export default function Home() {
                 ))}
               </ul>
               <Link
-                href="/contact"
+                href="/sign-up"
                 className="mt-8 inline-flex rounded-full border border-stone-700 px-5 py-2.5 text-sm font-semibold text-stone-300 hover:border-stone-500 hover:text-white transition-colors"
               >
-                Request early API access
+                Get API access →
               </Link>
             </div>
 

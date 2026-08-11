@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-tokens";
 import { db } from "@/lib/db";
 import {
+  buildCategoriesChecked,
   getRiskLevelLabel,
   getScoringProfileForPlan,
   scorePrompt,
@@ -25,7 +26,40 @@ export async function POST(request: Request) {
     }
 
     const { workspaceId, userId } = apiToken;
+
+    if (apiToken.workspace.plan === "FREE") {
+      return NextResponse.json(
+        { error: "API access is not available on the free plan. Please upgrade to Pro or Business." },
+        { status: 403 }
+      );
+    }
+
     const profile = getScoringProfileForPlan(apiToken.workspace.plan);
+
+    const existing = await db.promptTest.findFirst({
+      where: { workspaceId, userId, prompt: parsed.data.prompt, targetModel: null },
+      include: { findings: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      const usage = await getWorkspaceUsage(workspaceId);
+      return NextResponse.json({
+        id: existing.id,
+        score: existing.score,
+        level: getRiskLevelLabel(existing.score, existing.findings),
+        summary: existing.summary,
+        findings: existing.findings.map((f) => ({
+          category: f.category,
+          severity: f.severity,
+          explanation: f.explanation,
+          recommendation: f.recommendation,
+        })),
+        improvedPrompt: existing.improvedPrompt ?? null,
+        cached: true,
+        usage: { used: usage.used, limit: usage.limit, remaining: usage.remaining },
+      });
+    }
 
     const limitCheck = await ensureWithinPlanLimit(workspaceId);
     if (!limitCheck.allowed) {
@@ -35,14 +69,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const scored = await scorePrompt(parsed.data.prompt, parsed.data.model, profile);
+    const scored = await scorePrompt(parsed.data.prompt, undefined, profile);
 
     const test = await db.promptTest.create({
       data: {
         workspaceId,
         userId,
         prompt: parsed.data.prompt,
-        targetModel: parsed.data.model ?? null,
+        targetModel: null,
         score: scored.score,
         summary: scored.summary,
         improvedPrompt: scored.improvedPrompt ?? null,

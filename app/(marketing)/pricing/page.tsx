@@ -33,6 +33,7 @@ const TIERS = [
       "AI-powered scoring",
       "Findings + remediation tips",
       "Full test history",
+      "API access",
       "Priority support",
     ],
   },

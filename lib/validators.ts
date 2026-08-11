@@ -45,5 +45,4 @@ export const createTokenSchema = z.object({
 
 export const v1TestSchema = z.object({
   prompt: z.string().min(10).max(12000),
-  model: z.string().max(120).optional(),
 });

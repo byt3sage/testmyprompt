@@ -16,7 +16,7 @@ import { useMemo, useState } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "scanner" | "history" | "workspace" | "billing";
+type Tab = "scanner" | "history" | "workspace" | "billing" | "api";
 
 type Workspace = {
   id: string;
@@ -819,7 +819,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
   const [newTokenName, setNewTokenName] = useState("");
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
-  const apiFeaturesEnabled = false;
+  const apiFeaturesEnabled = activeWorkspace?.plan === "PRO" || activeWorkspace?.plan === "BUSINESS";
 
   const activeWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
   const avgScore        = useMemo(() => tests.length ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null, [tests]);
@@ -930,6 +930,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
     { id: "history",   label: "History",   icon: Clock       },
     { id: "workspace", label: "Workspace", icon: Users       },
     { id: "billing",   label: "Billing",   icon: CreditCard  },
+    ...(apiFeaturesEnabled ? [{ id: "api" as Tab, label: "API", icon: Zap }] : []),
   ];
 
   return (
@@ -977,7 +978,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
               type="button"
               onClick={() => {
                 setActiveTab(id);
-                if (apiFeaturesEnabled && id === "workspace" && workspaceId) void loadTokens(workspaceId);
+                if (id === "api" && workspaceId) void loadTokens(workspaceId);
               }}
               className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeTab === id
@@ -1044,6 +1045,7 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
               {activeTab === "history"   && "All test runs for this workspace"}
               {activeTab === "workspace" && "Members and workspace settings"}
               {activeTab === "billing"   && "Plan, usage limits and subscription"}
+              {activeTab === "api"       && "API keys and integration docs"}
             </p>
           </div>
           {activeTab === "scanner" && (
@@ -1163,97 +1165,9 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
                 {memberSuccess && <p className="mt-2 text-xs font-semibold text-emerald-400">Member added successfully.</p>}
               </div>
 
-              {/* API tokens */}
-              {apiFeaturesEnabled && (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">API tokens</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">Use tokens to call <code className="text-zinc-400">POST /api/v1/test</code> from your CI/CD pipeline.</p>
-                  </div>
-                </div>
+              {/* API tokens — moved to API tab */}
 
-                {/* Reveal panel — shown once after creation */}
-                {revealedToken && (
-                  <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Save this now — it won&apos;t be shown again</p>
-                      <button type="button" onClick={() => setRevealedToken(null)} className="text-amber-400/60 hover:text-amber-300 text-xs">✕</button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <code className="flex-1 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-xs text-amber-200">{revealedToken}</code>
-                      <CopyButton text={revealedToken} />
-                    </div>
-                  </div>
-                )}
-
-                {/* Create form */}
-                <form onSubmit={createToken} className="mt-4 flex gap-2">
-                  <input
-                    value={newTokenName}
-                    onChange={(e) => setNewTokenName(e.target.value)}
-                    placeholder='Token name e.g. "CI pipeline"'
-                    className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    disabled={tokenLoading || !workspaceId}
-                    className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-900 transition-opacity disabled:opacity-50"
-                  >
-                    {tokenLoading ? "…" : "Generate"}
-                  </button>
-                </form>
-
-                {/* Token list */}
-                {tokens.length > 0 ? (
-                  <div className="mt-4 space-y-2">
-                    {tokens.map((t) => (
-                      <div key={t.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-zinc-300">{t.name}</p>
-                          <p className="mt-0.5 text-[10px] text-zinc-600">
-                            <code className="text-zinc-500">{t.prefix}…</code>
-                            {" · "}
-                            {t.lastUsedAt
-                              ? `Last used ${formatUtcDate(t.lastUsedAt)}`
-                              : "Never used"}
-                            {" · "}
-                            Created {formatUtcDate(t.createdAt)}
-                            {t.user.name ? ` by ${t.user.name}` : ""}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => revokeToken(t.id)}
-                          className="ml-4 shrink-0 rounded-md border border-zinc-700 px-2 py-1 text-[10px] font-semibold text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
-                        >
-                          Revoke
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 text-xs text-zinc-600">No tokens yet. Generate one above.</p>
-                )}
-              </div>
-              )}
-
-              {/* API usage example */}
-              {apiFeaturesEnabled && (
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">API usage</p>
-                <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`curl -X POST https://your-domain.com/api/v1/test \\
-  -H "Authorization: Bearer <YOUR_TOKEN>" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "prompt": "You are a helpful assistant..."
-  }'`}</pre>
-                <p className="mt-3 text-xs text-zinc-500">
-                  Returns a JSON object with <code className="text-zinc-400">score</code>, <code className="text-zinc-400">level</code>, <code className="text-zinc-400">findings</code>, and <code className="text-zinc-400">improvedPrompt</code>. Each call counts against your workspace&apos;s monthly limit.
-                </p>
-              </div>
-              )}
+              {/* API usage example — moved to API tab */}
             </div>
           )}
 
@@ -1304,6 +1218,166 @@ export function DashboardClient({ workspaces, initialWorkspaceId, initialTests, 
               <button type="button" onClick={openBillingPortal} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition-colors hover:bg-zinc-800">
                 Manage subscription →
               </button>
+            </div>
+          )}
+
+          {/* ── API ──────────────────────────────────────────────────────── */}
+          {activeTab === "api" && (
+            <div className="max-w-3xl space-y-5 p-6">
+
+              {/* Token management */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">API tokens</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Tokens authenticate requests to <code className="text-zinc-400">POST /api/v1/test</code>. Treat them like passwords — never commit to source control.</p>
+
+                {revealedToken && (
+                  <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Save this now — it won&apos;t be shown again</p>
+                      <button type="button" onClick={() => setRevealedToken(null)} className="text-xs text-amber-400/60 hover:text-amber-300">✕</button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="flex-1 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-xs text-amber-200">{revealedToken}</code>
+                      <CopyButton text={revealedToken} />
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={createToken} className="mt-4 flex gap-2">
+                  <input
+                    value={newTokenName}
+                    onChange={(e) => setNewTokenName(e.target.value)}
+                    placeholder='Token name e.g. "CI pipeline"'
+                    className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-400/40"
+                    required
+                  />
+                  <button type="submit" disabled={tokenLoading || !workspaceId} className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-bold text-zinc-900 transition-opacity disabled:opacity-50">
+                    {tokenLoading ? "…" : "Generate"}
+                  </button>
+                </form>
+
+                {tokens.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {tokens.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-zinc-300">{t.name}</p>
+                          <p className="mt-0.5 text-[10px] text-zinc-600">
+                            <code className="text-zinc-500">{t.prefix}…</code>
+                            {" · "}{t.lastUsedAt ? `Last used ${formatUtcDate(t.lastUsedAt)}` : "Never used"}
+                            {" · "}Created {formatUtcDate(t.createdAt)}{t.user.name ? ` by ${t.user.name}` : ""}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => revokeToken(t.id)} className="ml-4 shrink-0 rounded-md border border-zinc-700 px-2 py-1 text-[10px] font-semibold text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400">
+                          Revoke
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-xs text-zinc-600">No tokens yet. Generate one above.</p>
+                )}
+              </div>
+
+              {/* Quick start */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Quick start</p>
+                <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`curl -X POST https://testmyprompt.net/api/v1/test \\
+  -H "Authorization: Bearer <YOUR_TOKEN>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "prompt": "You are a helpful assistant..."
+  }'`}</pre>
+              </div>
+
+              {/* Request */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Request</p>
+                <p className="text-xs text-zinc-400"><span className="font-semibold text-zinc-200">POST</span> <code className="text-amber-300">/api/v1/test</code></p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                      <th className="pb-2 pr-4">Field</th><th className="pb-2 pr-4">Type</th><th className="pb-2">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60">
+                    {[
+                      ["prompt", "string (required)", "The system prompt to analyse. Min 10, max 12 000 characters."],
+                    ].map(([field, type, desc]) => (
+                      <tr key={field}>
+                        <td className="py-2 pr-4 font-mono text-amber-300">{field}</td>
+                        <td className="py-2 pr-4 text-zinc-500">{type}</td>
+                        <td className="py-2 text-zinc-400">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Response */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Response</p>
+                <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`{
+  "id": "cm...",
+  "score": 42,
+  "level": "Critical",
+  "summary": "High injection risk detected...",
+  "findings": [
+    {
+      "category": "Prompt Injection",
+      "severity": "high",
+      "explanation": "...",
+      "recommendation": "..."
+    }
+  ],
+  "improvedPrompt": "You are a helpful assistant...",
+  "cached": false,
+  "usage": { "used": 3, "limit": 20, "remaining": 17 }
+}`}</pre>
+              </div>
+
+              {/* Error codes */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Error codes</p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                      <th className="pb-2 pr-4">Status</th><th className="pb-2">Meaning</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60">
+                    {[
+                      ["401", "Missing or invalid Bearer token."],
+                      ["402", "Monthly test limit reached for this workspace."],
+                      ["403", "API access not available on your plan."],
+                      ["400", "Invalid request body — check prompt length."],
+                      ["429", "IP-level rate limit exceeded."],
+                    ].map(([code, meaning]) => (
+                      <tr key={code}>
+                        <td className="py-2 pr-4 font-mono text-red-400">{code}</td>
+                        <td className="py-2 text-zinc-400">{meaning}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* CI/CD example */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">GitHub Actions example</p>
+                <pre className="overflow-auto rounded-lg bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">{`- name: Check prompt safety
+  run: |
+    RESPONSE=$(curl -sf -X POST https://testmyprompt.net/api/v1/test \\
+      -H "Authorization: Bearer \${{ secrets.TMP_API_KEY }}" \\
+      -H "Content-Type: application/json" \\
+      -d '{"prompt":"'"$(cat prompt.txt)"'"}')
+    SCORE=$(echo $RESPONSE | jq '.score')
+    if [ "$SCORE" -lt 60 ]; then
+      echo "Prompt safety score $SCORE is below threshold (60). Failing."
+      exit 1
+    fi`}</pre>
+              </div>
+
             </div>
           )}
 
