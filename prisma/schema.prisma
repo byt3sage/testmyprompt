@@ -77,6 +77,7 @@ model PromptTest {
   score           Int
   summary         String
   improvedPrompt  String?
+  ipAddress       String?
   createdAt       DateTime  @default(now())
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)

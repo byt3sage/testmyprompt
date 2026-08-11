@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
 import { getPlanConfig } from "@/lib/plans";
+import { PlanTier } from "@prisma/client";
+
+// Max tests per IP per month for FREE workspaces — prevents multi-account abuse
+const FREE_IP_MONTHLY_LIMIT = 5;
 
 function monthStart(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -49,4 +53,18 @@ export async function ensureWithinPlanLimit(workspaceId: string) {
     allowed: true,
     usage,
   };
+}
+
+export async function checkIpLimit(ip: string, plan: PlanTier): Promise<boolean> {
+  if (plan !== PlanTier.FREE) return true;
+
+  const count = await db.promptTest.count({
+    where: {
+      ipAddress: ip,
+      createdAt: { gte: monthStart() },
+      workspace: { plan: PlanTier.FREE },
+    },
+  });
+
+  return count < FREE_IP_MONTHLY_LIMIT;
 }

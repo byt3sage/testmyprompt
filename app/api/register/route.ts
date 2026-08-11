@@ -5,6 +5,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { registerSchema } from "@/lib/validators";
 
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY;
+
+async function verifyTurnstile(token: string): Promise<boolean> {
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: TURNSTILE_SECRET, response: token }),
+  });
+  const data = await res.json() as { success: boolean };
+  return data.success;
+}
+
 function toSlug(value: string): string {
   return value
     .toLowerCase()
@@ -28,6 +40,13 @@ export async function POST(request: Request) {
 
     const { name, workspaceName, email, password } = parsed.data;
     const normalizedEmail = email.toLowerCase();
+
+    if (TURNSTILE_SECRET) {
+      const token = (parsed.data as { turnstileToken?: string }).turnstileToken;
+      if (!token || !(await verifyTurnstile(token))) {
+        return NextResponse.json({ error: "Security check failed" }, { status: 403 });
+      }
+    }
 
     const existing = await db.user.findUnique({
       where: { email: normalizedEmail },

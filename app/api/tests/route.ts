@@ -8,7 +8,7 @@ import {
   getScoringProfileForPlan,
   scorePrompt,
 } from "@/lib/prompt-scoring";
-import { ensureWithinPlanLimit, getWorkspaceUsage } from "@/lib/usage";
+import { checkIpLimit, ensureWithinPlanLimit, getWorkspaceUsage } from "@/lib/usage";
 import { promptTestSchema } from "@/lib/validators";
 
 export async function GET(request: Request) {
@@ -76,6 +76,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+    // x-forwarded-for may be a comma-separated list; take the first (client) IP
+    const forwardedFor = request.headers.get("x-forwarded-for");
+    const ip = forwardedFor ? forwardedFor.split(",")[0].trim() : "unknown";
     const json = await request.json();
     const parsed = promptTestSchema.safeParse(json);
 
@@ -114,6 +117,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const ipAllowed = await checkIpLimit(ip, workspace.plan);
+    if (!ipAllowed) {
+      return NextResponse.json(
+        { error: "Monthly test limit reached for your IP address." },
+        { status: 429 }
+      );
+    }
+
     const scored = await scorePrompt(parsed.data.prompt, parsed.data.targetModel, profile);
 
     const created = await db.promptTest.create({
@@ -125,6 +136,7 @@ export async function POST(request: Request) {
         score: scored.score,
         summary: scored.summary,
         improvedPrompt: scored.improvedPrompt ?? null,
+        ipAddress: ip,
         findings: {
           create: scored.findings.map((finding) => ({
             category: finding.category,

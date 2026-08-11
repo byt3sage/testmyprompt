@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
 export function SignInForm() {
   const router = useRouter();
@@ -71,20 +74,30 @@ export function SignUpForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError("Please complete the security check.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     const registerRes = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, workspaceName, email, password }),
+      body: JSON.stringify({ name, workspaceName, email, password, turnstileToken }),
     });
 
     if (!registerRes.ok) {
       setLoading(false);
+      turnstileRef.current?.reset();
+      setTurnstileToken(null);
       setError("Unable to create account");
       return;
     }
@@ -141,9 +154,18 @@ export function SignUpForm() {
         className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3"
       />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {TURNSTILE_SITE_KEY ? (
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={TURNSTILE_SITE_KEY}
+          onSuccess={setTurnstileToken}
+          onExpire={() => setTurnstileToken(null)}
+          options={{ theme: "light" }}
+        />
+      ) : null}
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || (!!TURNSTILE_SITE_KEY && !turnstileToken)}
         className="w-full rounded-2xl bg-amber-500 px-4 py-3 font-semibold text-stone-900 disabled:opacity-50"
       >
         {loading ? "Creating account..." : "Create account"}
