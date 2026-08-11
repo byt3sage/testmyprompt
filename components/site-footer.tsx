@@ -22,6 +22,12 @@ export function SiteFooter() {
             <Link href="/contact" className="transition-colors hover:text-stone-700">
               Contact
             </Link>
+            <Link href="/privacy" className="transition-colors hover:text-stone-700">
+              Privacy
+            </Link>
+            <Link href="/terms" className="transition-colors hover:text-stone-700">
+              Terms
+            </Link>
           </nav>
         </div>
 
