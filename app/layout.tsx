@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 
 import { Providers } from "@/components/providers";
-import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 const sans = Bricolage_Grotesque({
@@ -75,10 +74,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-white">
         <Providers>
-          <div className="flex min-h-screen flex-col">
-            <main className="flex-1 min-h-0">{children}</main>
-            <SiteFooter />
-          </div>
+          {children}
         </Providers>
       </body>
     </html>
