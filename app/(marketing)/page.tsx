@@ -396,20 +396,6 @@ export default function Home() {
           <p className="mt-3 text-sm text-stone-600">No credit card required</p>
         </div>
       </section>
-
-      {/* ── Footer ───────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-stone-100 bg-white py-8">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 text-sm text-stone-400">
-          <span className="font-black tracking-tight text-stone-900">TestMyPrompt</span>
-          <nav className="flex gap-5">
-            <Link href="/features" className="hover:text-stone-700 transition-colors">Features</Link>
-            <Link href="/pricing" className="hover:text-stone-700 transition-colors">Pricing</Link>
-            <Link href="/docs" className="hover:text-stone-700 transition-colors">Docs</Link>
-            <Link href="/contact" className="hover:text-stone-700 transition-colors">Contact</Link>
-          </nav>
-          <p>© {new Date().getFullYear()} TestMyPrompt</p>
-        </div>
-      </footer>
     </>
   );
 }
